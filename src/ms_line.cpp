@@ -245,10 +245,6 @@ void InitVector()
     
     for (a = 0 ; a < num_vertices; a++){
         if (num_sense == -1){
-   //         multi_sense_emb[a] = (real *)malloc(dim * sizeof(real));
-			//multi_cluster_emb[a] = (real *)malloc((2 + dim) * sizeof(real));
-			//multi_cluster_emb[a][0] = 1;
-			//multi_cluster_emb[a][1] = 0;
 
 			multi_sense_emb[a] = (real *)malloc(dim * max_num_sense * sizeof(real));
 			multi_cluster_emb[a] = (real *)malloc((1 + (dim + 1) * max_num_sense) * sizeof(real));
@@ -262,6 +258,8 @@ void InitVector()
                 for(b = 0; b < dim; b++){
                     multi_cluster_emb[a][2 + (dim + 1)*k + b] = 0;
                 }
+
+                multi_cluster_emb[a][1 + (dim + 1)*k] = 0;
             }
         }
         else
@@ -366,8 +364,8 @@ void CreatNewClusterV2(int u)
     for (i = (num_word_sense - 1) * dim; i < num_word_sense * dim; i++){
 		multi_sense_emb[u][i] = (rand() / (real)RAND_MAX - 0.5) / dim;
 	}
-	//printf("ok1!\n"); fflush(stdout);
-	multi_cluster_emb[u][0] += 1;
+	
+    multi_cluster_emb[u][0] += 1;
 }
 
 void CreatNewCluster(int u)
@@ -423,9 +421,16 @@ int FindNearestCluster(int u, real* vec_context){
             sum2 += pow(multi_cluster_emb[u][lu + j], 2);
         }
 
+        //cout << multi_cluster_emb[u][lu] << endl;
+        //cout << multi_cluster_emb[u][lu + 1] << endl;
+        //cin.get();
+
         sum1 = sqrt(sum1); sum2 = sqrt(sum2);
         sims[i] = sum / (sum1 * sum2 + 1e-8);
-
+        //cout << sum1 << endl; cout << sum2 << endl;
+        //cout << sims[i] << endl;
+        //cin.get();
+        
         if(sims[i] > max_sim){
             k = i;
             max_sim = sims[i]; 
@@ -433,9 +438,9 @@ int FindNearestCluster(int u, real* vec_context){
     }
     
     if(num_sense == -1 && max_sim < gap){
-        cout << max_sim << endl;
-        cout << gap << endl;
-
+        //cout << max_sim << endl;
+        //cout << gap << endl;
+        //cin.get();
 		k = num_word_sense;
 		if (k >= max_num_sense - 1)
 			k = 0;
@@ -540,7 +545,7 @@ void Output()
 		if (is_binary) 
         {
             for (int k = 0; k < num; k++){
-                fprintf(fo, "%s %d ", vertex[a].name, k);
+                fprintf(fo, "%s %d %d ", vertex[a].name, k, (int)multi_cluster_emb[a][(1 + dim)*k + 1]);
                 for (int b = 0; b < dim; b++) 
                     fwrite(&multi_sense_emb[a][k * dim + b], sizeof(real), 1, fo);
                 fprintf(fo, "\n");
@@ -548,7 +553,7 @@ void Output()
         }
 		else {
             for (int k = 0; k < num; k++){
-                fprintf(fo, "%s %d ", vertex[a].name, k);
+                fprintf(fo, "%s %d %d ", vertex[a].name, k, (int)multi_cluster_emb[a][(1 + dim)*k + 1]);
                 for (int b = 0; b < dim; b++) 
 					fprintf(fo, "%lf ", multi_sense_emb[a][k * dim + b]);
                 fprintf(fo, "\n");
@@ -589,8 +594,9 @@ void Output()
         
         for (int k = 0; k < num; k++){
             int num_sense = (int) multi_cluster_emb[a][k * (1 + dim) + 1];
+            //num_sense = 1;
             token_num += num_sense;
-
+            
             for (int b = 0; b < dim; b++){
                 vec[b] += multi_sense_emb[a][k * dim + b] * num_sense;
             }
@@ -609,6 +615,37 @@ void Output()
     }
 
     fclose(fo);
+
+    char embedding_file4[100];
+    sprintf(embedding_file4, "%s.multi.context.emb", embedding_file);
+
+    fo = fopen(embedding_file4, "wb");
+
+    fprintf(fo, "%d %d\n", num_vertices, dim);
+    for(int a = 0; a < num_vertices; a++){
+        int num = (int) multi_cluster_emb[a][0];
+        if (is_binary)
+        {
+            for (int k = 0; k < num; k++){
+                fprintf(fo, "%s %d %d ", vertex[a].name, k, (int)multi_cluster_emb[a][(1 + dim)*k + 1]);
+                for (int b = 0; b < dim; b++)
+                    fwrite(&multi_cluster_emb[a][k *(dim + 1) + 2 + b], sizeof(real), 1, fo);
+                fprintf(fo, "\n");
+            }
+        }
+        else {
+            for (int k = 0; k < num; k++){
+                fprintf(fo, "%s %d %d ", vertex[a].name, k, (int)multi_cluster_emb[a][(1 + dim)*k + 1]);
+                for (int b = 0; b < dim; b++)
+                    fprintf(fo, "%lf ", multi_cluster_emb[a][k * (dim + 1) + 2 + b]);
+                fprintf(fo, "\n");
+            }
+        }
+
+    }
+
+    fclose(fo);
+
 }
 
 void TrainLINE() {

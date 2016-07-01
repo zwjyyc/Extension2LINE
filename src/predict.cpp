@@ -19,6 +19,9 @@ typedef float real;
 real* sigmoid_table;
 real sample_ratio = 0.01;
 
+map<string, vector<real> > wordAEmb;
+map<string, vector<real> > wordBEmb;
+map<string, vector<real> > wordCEmb;
 
 /* Fastly compute sigmoid function */
 void InitSigmoidTable()
@@ -65,7 +68,6 @@ void split_bychars(const string& str, vector<string> & vec, const char *sep = " 
         vec.push_back(word);
 }
 
-
 void GetNodeLis(char *fileName, vector<string> &nodeLis){
     ifstream fin;
     fin.open(fileName);
@@ -75,12 +77,57 @@ void GetNodeLis(char *fileName, vector<string> &nodeLis){
     while(my_getline(fin, line)){
         nodeLis.push_back(line);
         
-        if(cnt++ % 10000){
-            printf("Had processed %d nodes%%%c", cnt, 13);
+        if(cnt++ % 10000 == 0){
+            printf("Had processed %d nodes%c", cnt, 13);
             fflush(stdout);
         }
     }
     fin.close();
+}
+
+void GetWordMultiEmbs(char *embFile, map<string, vector<real> >& wordEmbs){
+    ifstream fin;
+    fin.open(embFile);
+
+    string line;
+    int cnt = 0;
+    string preKey = "";
+    string key = "";
+    vector<real> emb;
+
+    while(my_getline(fin, line)){
+        if(cnt++ % 10000 == 0){
+            printf("Had processed %d lines %c", cnt, 13);
+            fflush(stdout);
+        }
+
+        vector<string> strLis;
+        split_bychars(line, strLis);
+        
+        if(strLis.size() < 10)
+            continue;
+        else{
+            
+            key = strLis[0];
+            if(preKey != "" && preKey != key){
+                if(wordEmbs.count(preKey) == 0){
+                    vector<real> embCopy(emb);
+                    wordEmbs.insert(std::pair<string, vector<real> >(preKey, embCopy));
+                }
+                preKey = key;
+                emb.clear();
+            }
+
+            
+            for(int i = 0; i < strLis.size() - 1; i++){
+                emb.push_back(atof(strLis[i + 1].c_str()));
+            }
+            preKey = key;
+        }
+    }
+
+    if(wordEmbs.count(key) == 0)
+        wordEmbs.insert(std::pair<string, vector<real> >(key, emb));
 }
 
 void GetWordEmbs(char *embFile, map<string, vector<real> >& wordEmbs){
@@ -90,8 +137,8 @@ void GetWordEmbs(char *embFile, map<string, vector<real> >& wordEmbs){
     string line;
     int cnt = 0;
     while(my_getline(fin, line)){
-        if(cnt++ % 10000){
-            printf("Had processed %d nodes%%%c", cnt, 13);
+        if(cnt++ % 10000 == 0){
+            printf("Had processed %d lines%c", cnt, 13);
             fflush(stdout);
         }
 
@@ -111,7 +158,6 @@ void GetWordEmbs(char *embFile, map<string, vector<real> >& wordEmbs){
                 wordEmbs.insert(std::pair<string, vector<real> >(key, emb));
             }
         }
-
     }
 
     fin.close();
@@ -145,6 +191,107 @@ void GetSet(char *trainFile, char *testFile, vector<string>& trainSet, vector<st
 
 }
 
+int AssignByNum(string u, int dim){
+    int k;
+    int max_num = -1000;
+    int num_sense = wordBEmb[u].size() / (2 + dim);
+
+    for(int i = 0; i < num_sense; i++){
+        if (max_num < wordBEmb[u][i * (dim + 2) + 1]){
+            max_num = wordBEmb[u][i * (dim + 2) + 1];
+            k = i;
+        }
+    }
+    //cout << "k" << k << endl;
+    //cin.get();
+    return k;
+}
+
+int AssignByContext(string u, string v){
+    int dim = wordCEmb[v].size();
+    int num_sense = wordBEmb[u].size() / (2 + dim);
+    //cout << num_sense << endl; cin.get();
+
+    double max_sim = -100000.0;
+    int k;
+
+    for(int i = 0; i < num_sense; i++){
+        double sum, sum1, sum2;
+        sum = sum1 = sum2 = 0;
+
+        for(int d = 0; d < dim; d++){
+            sum += wordBEmb[u][k * (2 + dim) + 2 + d] * wordCEmb[v][d];
+            sum1 += pow(wordBEmb[u][k * (2 + dim) + 2 + d], 2.0);
+            sum2 += pow(wordCEmb[v][d], 2.0);
+        }
+
+        double sim = sum / (sqrt(sum1) * sqrt(sum2) + 1e-8);
+
+        if(sim > max_sim){
+            k = i;
+            max_sim = sim;
+        }
+    }
+    return k;
+
+}
+
+int Assign(string u, string v){
+    return AssignByContext(u, v);
+
+    int dim = wordCEmb[v].size();
+    return AssignByNum(u, dim);
+
+}
+
+real LinkPredictionByOneSense(string u, string v){
+	real x;
+	int dim = wordCEmb[v].size();
+
+	int k_sense = Assign(u, v);
+	real sum, sum1, sum2;
+	sum = sum1 = sum2 = 0;
+	for (int k = 0; k < dim; k++){
+		sum += wordAEmb[u][k_sense * (dim + 2) + 2 + k] * wordCEmb[v][k];
+		sum1 += pow(wordAEmb[u][k_sense * (dim + 2) + 2 + k], 2.0);
+		sum2 += pow(wordCEmb[v][k], 2.0);
+	}
+
+	x = sum / (sqrt(sum1) * sqrt(sum2) + 1e-8);
+	return x;
+}
+
+real LinkPredictionByMultiSense(string u, string v){
+	real x = 0;
+	int dim = wordCEmb[v].size();
+	
+	int num_sense = wordBEmb[u].size() / (2 + dim);
+	int num_token = 0;
+
+	for (int s = 0; s < num_sense; s++){
+		int num_sense_token = wordBEmb[u][s * (dim + 2) + 1];
+		num_sense_token = 1;
+		num_token += num_sense_token;
+
+		real sum, sum1, sum2;
+		sum = sum1 = sum2 = 0;
+
+		for (int k = 0; k < dim; k++){
+			sum += wordAEmb[u][s * (dim + 2) + 2 + k] * wordCEmb[v][k];
+			sum1 += pow(wordAEmb[u][s * (dim + 2) + 2 + k], 2.0);
+			sum2 += pow(wordCEmb[v][k], 2.0);
+		}
+		x += sum * num_sense_token / (sqrt(sum1) * sqrt(sum2) + 1e-8);
+	}
+
+	x /= num_token;
+	return x;
+}
+
+real LinkPrediction(string u, string v){
+	return LinkPredictionByMultiSense(u, v);
+}
+
 int main(int argc, char** argv){
     InitSigmoidTable();
     cout << "InitSigmoid done!\n";
@@ -153,20 +300,21 @@ int main(int argc, char** argv){
     GetNodeLis(argv[1], nodeLis);
     cout << "\nGet nodes done!\n";
 
-    map<string, vector<real> > wordAEmb;
-    GetWordEmbs(argv[2], wordAEmb);
+    GetWordMultiEmbs(argv[2], wordAEmb);
     cout << "\nGet A embs done!\n";
     
-    map<string, vector<real> > wordBEmb;
-    GetWordEmbs(argv[3], wordBEmb);
+    GetWordMultiEmbs(argv[3], wordBEmb);
     cout << "\nGet B embs done!\n";
+    
+    GetWordEmbs(argv[4], wordCEmb);
+    cout << "\nGet C embs done!\n";
 
     vector<string> trainSet; vector<string> testSet;
-    GetSet(argv[4], argv[5], trainSet, testSet);
+    GetSet(argv[5], argv[6], trainSet, testSet);
     cout << "\nGet set done!\n";
 
     ofstream foutTestSet, foutMisSet;
-    foutTestSet.open(argv[6]); foutMisSet.open(argv[7]);
+    foutTestSet.open(argv[7]); foutMisSet.open(argv[8]);
 
     int ccnt = 0;
     int n_p = 0;
@@ -185,17 +333,12 @@ int main(int argc, char** argv){
         
         real x = 0;
         
-        if(wordAEmb.count(u) == 0 || wordBEmb.count(v) == 0){
+        if(wordAEmb.count(u) == 0 || wordCEmb.count(v) == 0){
             epV = 0.0;    
-            //cout << "found it! A" << endl;
         }
         else
         {
-            for(int k = 0; k < wordAEmb[u].size(); k++){
-                x += wordAEmb[u][k] * wordBEmb[v][k];
-            }
-            epV = FastSigmoid(x);
-            epV = x;
+			epV = LinkPrediction(u, v);
         }
 
         string us,vs;
@@ -206,17 +349,12 @@ int main(int argc, char** argv){
         key = us + " " + vs;
         
         x = 0;
-        if(wordAEmb.count(us) == 0 || wordBEmb.count(vs) == 0){
+        if(wordAEmb.count(us) == 0 || wordCEmb.count(vs) == 0){
             misV = 0.0;
-            //cout << "found it! B" << endl;
         }
         else
         {
-            for(int k = 0; k < wordAEmb[us].size(); k++){
-                x += wordAEmb[us][k] * wordBEmb[vs][k];
-            }
-            misV = FastSigmoid(x);
-            misV = x;
+            misV = LinkPrediction(us, vs);
         }
         
         ccnt++;
@@ -253,6 +391,7 @@ int main(int argc, char** argv){
             }
             else if(find(testSet.begin(), testSet.end(), key) != testSet.end()){
                 real x = 0;
+             
                 for(int k = 0; k < wordAEmb[nodeLis[i]].size(); k++){
                     x += wordAEmb[nodeLis[i]][k] * wordBEmb[nodeLis[j]][k];
                 }
