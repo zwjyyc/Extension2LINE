@@ -256,7 +256,7 @@ void InitVector()
             
             for (k = 0; k < max_num_sense; k++){
                 for(b = 0; b < dim; b++){
-                    multi_cluster_emb[a][2 + (dim + 1)*k + b] = 0;
+                    multi_cluster_emb[a][2 + (dim + 1)*k + b] = (rand() / (real)RAND_MAX - 0.5) / dim;
                 }
 
                 multi_cluster_emb[a][1 + (dim + 1)*k] = 0;
@@ -281,7 +281,7 @@ void InitVector()
 	a = posix_memalign((void **)&emb_context, 128, (long long)num_vertices * dim * sizeof(real));
 	if (emb_context == NULL) { printf("Error: memory allocation failed\n"); exit(1); }
 	for (b = 0; b < dim; b++) for (a = 0; a < num_vertices; a++)
-		emb_context[a * dim + b] = 0;
+		emb_context[a * dim + b] = (rand() / (real)RAND_MAX - 0.5) / dim;
 }
 
 /* Sample negative vertex samples according to vertex degrees */
