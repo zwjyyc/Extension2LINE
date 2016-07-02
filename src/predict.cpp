@@ -18,10 +18,10 @@ typedef float real;
 
 real* sigmoid_table;
 real sample_ratio = 0.01;
+int total_dim;
 
 map<string, vector<real> > wordAEmb;
 map<string, vector<real> > wordBEmb;
-map<string, vector<real> > wordCEmb;
 
 /* Fastly compute sigmoid function */
 void InitSigmoidTable()
@@ -173,7 +173,7 @@ void GetSet(char *trainFile, char *testFile, vector<string>& trainSet, vector<st
     while(my_getline(finTrain, line)){
         vector<string> strLis;
         
-        split_bychars(line, strLis, "\t");
+        split_bychars(line, strLis);
 
         string key = strLis[0] + " " + strLis[1];
         trainSet.push_back(key);
@@ -182,7 +182,7 @@ void GetSet(char *trainFile, char *testFile, vector<string>& trainSet, vector<st
 
     while(my_getline(finTest, line)){
         vector<string> strLis;
-        split_bychars(line, strLis, "\t");
+        split_bychars(line, strLis);
 
         string key = strLis[0] + " " + strLis[1];
         testSet.push_back(key);
@@ -191,7 +191,7 @@ void GetSet(char *trainFile, char *testFile, vector<string>& trainSet, vector<st
 
 }
 
-int AssignByNum(string u, int dim){
+/*int AssignByNum(string u, int dim){
     int k;
     int max_num = -1000;
     int num_sense = wordBEmb[u].size() / (2 + dim);
@@ -205,10 +205,10 @@ int AssignByNum(string u, int dim){
     //cout << "k" << k << endl;
     //cin.get();
     return k;
-}
+}*/
 
-int AssignByContext(string u, string v){
-    int dim = wordCEmb[v].size();
+/*int AssignByContext(string u, string v){
+    int dim = wordAEmb[v].size();
     int num_sense = wordBEmb[u].size() / (2 + dim);
     //cout << num_sense << endl; cin.get();
 
@@ -216,14 +216,15 @@ int AssignByContext(string u, string v){
     int k;
 
     for(int i = 0; i < num_sense; i++){
-        double sum, sum1, sum2;
-        sum = sum1 = sum2 = 0;
+    	for (int j=0; j < num_sense; j++){
+		double sum, sum1, sum2;
+        	sum = sum1 = sum2 = 0;
 
-        for(int d = 0; d < dim; d++){
-            sum += wordBEmb[u][k * (2 + dim) + 2 + d] * wordCEmb[v][d];
-            sum1 += pow(wordBEmb[u][k * (2 + dim) + 2 + d], 2.0);
-            sum2 += pow(wordCEmb[v][d], 2.0);
-        }
+        	for(int d = 0; d < dim; d++){
+        		sum += wordBEmb[u][k * (2 + dim) + 2 + d] * wordAEmb[v][d];
+        		sum1 += pow(wordBEmb[u][k * (2 + dim) + 2 + d], 2.0);
+        		sum2 += pow(wordAEmb[v][d], 2.0);
+        	}
 
         double sim = sum / (sqrt(sum1) * sqrt(sum2) + 1e-8);
 
@@ -246,42 +247,45 @@ int Assign(string u, string v){
 
 real LinkPredictionByOneSense(string u, string v){
 	real x;
-	int dim = wordCEmb[v].size();
+	int dim = wordAEmb[v].size();
 
 	int k_sense = Assign(u, v);
 	real sum, sum1, sum2;
 	sum = sum1 = sum2 = 0;
 	for (int k = 0; k < dim; k++){
-		sum += wordAEmb[u][k_sense * (dim + 2) + 2 + k] * wordCEmb[v][k];
+		sum += wordAEmb[u][k_sense * (dim + 2) + 2 + k] * wordAEmb[v][k];
 		sum1 += pow(wordAEmb[u][k_sense * (dim + 2) + 2 + k], 2.0);
-		sum2 += pow(wordCEmb[v][k], 2.0);
+		sum2 += pow(wordAEmb[v][k], 2.0);
 	}
 
 	x = sum / (sqrt(sum1) * sqrt(sum2) + 1e-8);
 	return x;
-}
+}*/
 
 real LinkPredictionByMultiSense(string u, string v){
 	real x = 0;
-	int dim = wordCEmb[v].size();
+	int dim = total_dim;
 	
-	int num_sense = wordBEmb[u].size() / (2 + dim);
+	int num_sense = wordAEmb[u].size() / (2 + dim);
+	int num_sense_2 = wordAEmb[v].size() / (2 + dim);
 	int num_token = 0;
 
-	for (int s = 0; s < num_sense; s++){
-		int num_sense_token = wordBEmb[u][s * (dim + 2) + 1];
-		num_sense_token = 1;
-		num_token += num_sense_token;
+	for (int i = 0; i < num_sense; i++){
+		for (int j = 0; j < num_sense_2; j++){
+			//int num_sense_token = wordBEmb[u][s * (dim + 2) + 1];
+			int num_sense_token = 1;
+			num_token += num_sense_token;
 
-		real sum, sum1, sum2;
-		sum = sum1 = sum2 = 0;
+			real sum, sum1, sum2;
+			sum = sum1 = sum2 = 0;
 
-		for (int k = 0; k < dim; k++){
-			sum += wordAEmb[u][s * (dim + 2) + 2 + k] * wordCEmb[v][k];
-			sum1 += pow(wordAEmb[u][s * (dim + 2) + 2 + k], 2.0);
-			sum2 += pow(wordCEmb[v][k], 2.0);
+			for (int k = 0; k < dim; k++){
+				sum += wordAEmb[u][i * (dim + 2) + 2 + k] * wordAEmb[v][j * (dim + 2) + 2 + k];
+				sum1 += pow(wordAEmb[u][i * (dim + 2) + 2 + k], 2.0);
+				sum2 += pow(wordAEmb[v][j * (dim + 2) + 2 + k], 2.0);
+			}
+			x += sum * num_sense_token / (sqrt(sum1) * sqrt(sum2) + 1e-8);
 		}
-		x += sum * num_sense_token / (sqrt(sum1) * sqrt(sum2) + 1e-8);
 	}
 
 	x /= num_token;
@@ -306,15 +310,14 @@ int main(int argc, char** argv){
     GetWordMultiEmbs(argv[3], wordBEmb);
     cout << "\nGet B embs done!\n";
     
-    GetWordEmbs(argv[4], wordCEmb);
-    cout << "\nGet C embs done!\n";
-
     vector<string> trainSet; vector<string> testSet;
-    GetSet(argv[5], argv[6], trainSet, testSet);
+    GetSet(argv[4], argv[5], trainSet, testSet);
     cout << "\nGet set done!\n";
 
     ofstream foutTestSet, foutMisSet;
-    foutTestSet.open(argv[7]); foutMisSet.open(argv[8]);
+    foutTestSet.open(argv[6]); foutMisSet.open(argv[7]);
+
+    total_dim = atoi(argv[8]);
 
     int ccnt = 0;
     int n_p = 0;
@@ -333,7 +336,7 @@ int main(int argc, char** argv){
         
         real x = 0;
         
-        if(wordAEmb.count(u) == 0 || wordCEmb.count(v) == 0){
+        if(wordAEmb.count(u) == 0){
             epV = 0.0;    
         }
         else
@@ -349,7 +352,7 @@ int main(int argc, char** argv){
         key = us + " " + vs;
         
         x = 0;
-        if(wordAEmb.count(us) == 0 || wordCEmb.count(vs) == 0){
+        if(wordAEmb.count(us) == 0){
             misV = 0.0;
         }
         else
