@@ -44,7 +44,7 @@ int num_sense = -1, max_num_sense = 10;
 int *vertex_hash_table, *neg_table;
 int max_num_vertices = 1000, num_vertices = 0;
 long long total_samples = 1, current_sample_count = 0, num_edges = 0;
-real init_rho = 0.025, rho, gap = -0.5;
+real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5;
 real *emb_context, *sigmoid_table;
 real **multi_sense_emb, **multi_cluster_emb;
 
@@ -502,10 +502,12 @@ void *TrainLINEThread(void *id)
 		u = edge_source_id[curedge];
 		v = edge_target_id[curedge];
 
-        // 
-        k = AssignSense2Node(u, v);
+        	// 
+        	k = 0;
+		
+		if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
 		//printf("word %lld; sense %d\n", u, k);
-        //UpdateContextCluster(u, k);
+        	//UpdateContextCluster(u, k);
         
 		lu = k * dim; // 
 		for (int c = 0; c != dim; c++) vec_error[c] = 0;
@@ -659,8 +661,9 @@ void TrainLINE() {
 	}
 	printf("--------------------------------\n");
 	printf("Order: %d\n", order);
-    printf("Sense: %d\n", num_sense);
-    printf("Gapval: %lf\n", gap);
+	printf("Sense: %d\n", num_sense);
+	printf("Gapval: %lf\n", gap);
+	printf("Pre-training ratio %lf\n", ratio);
 	printf("Samples: %lldM\n", total_samples / 1000000);
 	printf("Negative: %d\n", num_negative);
 	printf("Dimension: %d\n", dim);
@@ -726,12 +729,14 @@ int main(int argc, char **argv) {
 		printf("\t\tUse <int> threads (default 1)\n");
 		printf("\t-rho <float>\n");
 		printf("\t\tSet the starting learning rate; default is 0.025\n");
-        printf("\t-sense <int>\n");
-		printf("\t\tSet the fixed number of sense; default is -1 which means non-parameteric estimation");
-        printf("\t-gap <float>\n");
-        printf("\t\tSet the gab value; default is -0.5");
+        	printf("\t-sense <int>\n");
+		printf("\t\tSet the fixed number of sense; default is -1 which means non-parameteric estimation\n");
+        	printf("\t-gap <float>\n");
+        	printf("\t\tSet the gab value; default is -0.5\n");
+		printf("\t-ratio <float>\n");
+		printf("\t\tSet the pre-training ratio; default is 0.5\n");
 		printf("\nExamples:\n");
-		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3\n\n");
+		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5\n\n");
 		return 0;
 	}
 	if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(network_file, argv[i + 1]);
@@ -744,7 +749,8 @@ int main(int argc, char **argv) {
 	if ((i = ArgPos((char *)"-rho", argc, argv)) > 0) init_rho = atof(argv[i + 1]);
 	if ((i = ArgPos((char *)"-threads", argc, argv)) > 0) num_threads = atoi(argv[i + 1]);
 	if ((i = ArgPos((char *)"-sense", argc, argv)) > 0) num_sense = atoi(argv[i + 1]);
-    if ((i = ArgPos((char *)"-gap", argc, argv)) > 0) gap = atof(argv[i + 1]);
+	if ((i = ArgPos((char *)"-gap", argc, argv)) > 0) gap = atof(argv[i + 1]);
+	if ((i = ArgPos((char *)"-ratio", argc, argv)) > 0) ratio = atof(argv[i + 1]);
     total_samples *= 1000000;
 	rho = init_rho;
 	vertex = (struct ClassVertex *)calloc(max_num_vertices, sizeof(struct ClassVertex));

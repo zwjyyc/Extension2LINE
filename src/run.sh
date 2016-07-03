@@ -17,7 +17,7 @@
 
 g++ -lm -pthread -Ofast -march=native -Wall -funroll-loops -ffast-math -Wno-unused-result ms_line.cpp -o ms_line -lgsl -lm -lgslcblas
 
-./ms_line -train ../data/dblp.authors.net.shuf.train -output vec_2nd_wo_norm.txt -binary 0 -size 50 -order 2 -negative 5 -samples 1000 -threads 5 -sense -1 -gap -0.5
+./ms_line -train ../data/dblp.authors.net.shuf.train -output vec_2nd_wo_norm.txt -binary 0 -size 50 -order 2 -negative 5 -samples 1000 -threads 5 -sense -1 -gap -1 -ratio 0.5
 
 echo "predict auc"
 g++ predict.cpp -o predict
