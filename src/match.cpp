@@ -32,42 +32,38 @@ int main(int argc, char **argv){
 		name[num] = st;
 	}
 	cout<<"finish"<<endl;
-	ifstream f2(argv[2]);
-	ifstream f3(argv[3]);
+	ifstream f3(argv[2]);
 	//ofstream f4("max_sim.table");
 	//ofstream f5("gotten.table");
-	while (getline(f2, st)){
+	int vec_num, dim;
+	f3>>vec_num>>dim;
+	//cout<<vec_num<<' '<<dim<<endl;
+	int vec_id, vec_sense, vec_count;
+	int num_count = 0;
+	while (f3>>vec_id>>vec_sense>>vec_count){
+		vector<float> vec;
+		for (int j = 0; j < dim; j++){
+			float x;
+			f3>>x;
+			vec.push_back(x);
+		}
+		for (int d = 0; d < dim; d++){
+			vec_map[make_pair(vec_id, vec_sense)].push_back(vec[d]);
+		}
+		num_count++;
+		if (num_count % 100000 == 0) cout<<num_count<<endl;
+	}
+	cout<<"done"<<endl;
+	while (getline(cin, st)){
 		int l = st.length() - 1;
-		while (st[l] == '\n' || st[l] == '\r'){
-			st.erase(l);
-			l--;
-		}
-		num = name_map[st];
-		//cout<<st<<' '<<num<<endl;
-		int vec_num, dim;
-		f3>>vec_num>>dim;
-		//cout<<vec_num<<' '<<dim<<endl;
+                while (st[l] == '\n' || st[l] == '\r'){
+                        st.erase(l);
+                        l--;
+                }
+                num = name_map[st];
 		int sense_num = 0;
-		int vec_id, vec_sense, vec_count;
-		int num_count = 0;
-		while (f3>>vec_id>>vec_sense>>vec_count){
-			vector<float> vec;
-			for (int j = 0; j < dim; j++){
-				float x;
-				f3>>x;
-				vec.push_back(x);
-			}
-			for (int d = 0; d < dim; d++){
-				vec_map[make_pair(vec_id, vec_sense)].push_back(vec[d]);
-			}
-			if (vec_id == num){
-				if (vec_sense + 1 > sense_num) sense_num = vec_sense + 1;
-				//cout<<sense_num<<endl;
-			}
-			num_count++;
-			if (num_count % 100000 == 0) cout<<num_count<<endl;
-		}
-		cout<<"done"<<endl;
+		while (vec_map.find(make_pair(num, sense_num)) != vec_map.end()) sense_num++;
+		cout<<"sense_num "<<sense_num<<endl;
 		map<pair<int, int>, vector<float> >::iterator i = vec_map.begin();
 		int count = 0;
 		while (i != vec_map.end()){
@@ -96,17 +92,19 @@ int main(int argc, char **argv){
 				sumb = sqrt(sumb);
 				sum = sum / (suma * sumb);
 				if (sum > max_sim) max_sim = sum;
+				//if (tmp_vec_id == 635300) cout<<suma<<' '<<sumb<<' '<<sum<<endl;
 				//cout<<sum<<endl;
 				//return 0;
 			}
 			max_map[max_sim] = tmp_vec_id;
+			//if (max_sim == -10000) cout<<tmp_vec_id<<endl;
 			//f4<<max_sim<<' '<<tmp_vec_id<<endl;
 			i++;
 			if (count % 100000 == 0) cout<<count<<endl;
 			count++;
 		}
 		cout<<"finish counting"<<endl;
-		map<float, int>::iterator j = max_map.begin();
+		map<float, int>::reverse_iterator j = max_map.rbegin();
 		memset(v, false, sizeof(v));
 		for (int k = 0; k < 10; k++){
 			if (v[j->second]){
@@ -114,13 +112,13 @@ int main(int argc, char **argv){
 				continue;
 			}
 			v[j->second] = true;
-			cout<<name[j->second]<<endl;
+			cout<<name[j->second]<<' '<<j->first<<endl;
 			//for (int d = 0; d < dim; d++){
 			//	cout<<vec_map[make_pair(j->second, 0)][d]<<' ';
 			//}
 			//cout<<endl;
 			j++;
-			if (j == max_map.end()) break;
+			if (j == max_map.rend()) break;
 		}
 		cout<<"program finish"<<endl;
 	}
