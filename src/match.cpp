@@ -56,33 +56,33 @@ int main(int argc, char **argv){
 	cout<<"done"<<endl;
 	while (getline(cin, st)){
 		int l = st.length() - 1;
-                while (st[l] == '\n' || st[l] == '\r'){
-                        st.erase(l);
-                        l--;
-                }
-                num = name_map[st];
+		while (st[l] == '\n' || st[l] == '\r'){
+			st.erase(l);
+			l--;
+		}
+		num = name_map[st];
 		int sense_num = 0;
 		while (vec_map.find(make_pair(num, sense_num)) != vec_map.end()) sense_num++;
 		cout<<"sense_num "<<sense_num<<endl;
-		map<pair<int, int>, vector<float> >::iterator i = vec_map.begin();
-		int count = 0;
-		while (i != vec_map.end()){
-			int tmp_vec_id = i->first.first;
-			int tmp_vec_sense = i->first.second;
-			//f5<<tmp_vec_id<<' '<<name[tmp_vec_id]<<endl;
-			vector<float> tmp_vec(i->second);
-			//for (int d = 0; d < dim; d++){
-			//	f5<<tmp_vec[d]<<' ';
-			//}
-			//f5<<endl;
-			if (num == tmp_vec_id){
-				i++;
-				continue;
-			}
-			float max_sim = -10000;
-			for (int j = 0; j < sense_num; j++){
+		for (int s = 0; s < sense_num; s++){
+			max_map.clear();
+			map<pair<int, int>, vector<float> >::iterator i = vec_map.begin();
+			int count = 0;
+			while (i != vec_map.end()){
+				int tmp_vec_id = i->first.first;
+				int tmp_vec_sense = i->first.second;
+				//f5<<tmp_vec_id<<' '<<name[tmp_vec_id]<<endl;
+				vector<float> tmp_vec(i->second);
+				//for (int d = 0; d < dim; d++){
+				//	f5<<tmp_vec[d]<<' ';
+				//}
+				//f5<<endl;
+				if (num == tmp_vec_id){
+					i++;
+					continue;
+				}
 				float sum = 0, suma = 0, sumb = 0;
-				vector<float> main_vec(vec_map[make_pair(num, j)]);
+				vector<float> main_vec(vec_map[make_pair(num, s)]);
 				for (int d = 0; d < dim; d++){
 					suma += pow(main_vec[d], 2.0);
 					sumb += pow(tmp_vec[d], 2.0);
@@ -90,35 +90,33 @@ int main(int argc, char **argv){
 				}
 				suma = sqrt(suma);
 				sumb = sqrt(sumb);
-				sum = sum / (suma * sumb);
-				if (sum > max_sim) max_sim = sum;
-				//if (tmp_vec_id == 635300) cout<<suma<<' '<<sumb<<' '<<sum<<endl;
-				//cout<<sum<<endl;
-				//return 0;
+				if (suma != 0 && sumb != 0){
+					sum = sum / (suma * sumb);
+					max_map[sum] = tmp_vec_id;
+				}
+				//if (max_sim == -10000) cout<<tmp_vec_id<<endl;
+				//f4<<max_sim<<' '<<tmp_vec_id<<endl;
+				i++;
+				if (count % 100000 == 0) cout<<count<<endl;
+				count++;
 			}
-			max_map[max_sim] = tmp_vec_id;
-			//if (max_sim == -10000) cout<<tmp_vec_id<<endl;
-			//f4<<max_sim<<' '<<tmp_vec_id<<endl;
-			i++;
-			if (count % 100000 == 0) cout<<count<<endl;
-			count++;
-		}
-		cout<<"finish counting"<<endl;
-		map<float, int>::reverse_iterator j = max_map.rbegin();
-		memset(v, false, sizeof(v));
-		for (int k = 0; k < 10; k++){
-			if (v[j->second]){
-				k--;
-				continue;
+			cout<<"finish counting"<<endl;
+			map<float, int>::reverse_iterator j = max_map.rbegin();
+			memset(v, false, sizeof(v));
+			for (int k = 0; k < 10; k++){
+				if (v[j->second]){
+					k--;
+					continue;
+				}
+				v[j->second] = true;
+				cout<<name[j->second]<<' '<<j->first<<endl;
+				//for (int d = 0; d < dim; d++){
+				//	cout<<vec_map[make_pair(j->second, 0)][d]<<' ';
+				//}
+				//cout<<endl;
+				j++;
+				if (j == max_map.rend()) break;
 			}
-			v[j->second] = true;
-			cout<<name[j->second]<<' '<<j->first<<endl;
-			//for (int d = 0; d < dim; d++){
-			//	cout<<vec_map[make_pair(j->second, 0)][d]<<' ';
-			//}
-			//cout<<endl;
-			j++;
-			if (j == max_map.rend()) break;
 		}
 		cout<<"program finish"<<endl;
 	}
