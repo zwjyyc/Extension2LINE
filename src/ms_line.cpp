@@ -44,7 +44,7 @@ int num_sense = -1, max_num_sense = 10;
 int *vertex_hash_table, *neg_table;
 int max_num_vertices = 1000, num_vertices = 0;
 long long total_samples = 1, current_sample_count = 0, num_edges = 0;
-real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5;
+real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5, factor = 1;
 real *emb_context, *sigmoid_table;
 real **multi_sense_emb, **multi_cluster_emb;
 
@@ -146,7 +146,7 @@ void ReadData()
 	for (int k = 0; k != num_edges; k++)
 	{
 		fscanf(fin, "%s %s %lf", name_v1, name_v2, &weight);
-
+		weight = pow(weight, factor);
 		if (k % 10000 == 0)
 		{
 			printf("Reading edges: %.3lf%%%c", k / (double)(num_edges + 1) * 100, 13);
@@ -664,6 +664,7 @@ void TrainLINE() {
 	printf("Sense: %d\n", num_sense);
 	printf("Gapval: %lf\n", gap);
 	printf("Pre-training ratio %lf\n", ratio);
+	printf("Factor %lf\n", factor);
 	printf("Samples: %lldM\n", total_samples / 1000000);
 	printf("Negative: %d\n", num_negative);
 	printf("Dimension: %d\n", dim);
@@ -735,8 +736,10 @@ int main(int argc, char **argv) {
         	printf("\t\tSet the gab value; default is -0.5\n");
 		printf("\t-ratio <float>\n");
 		printf("\t\tSet the pre-training ratio; default is 0.5\n");
+		printf("\t-factor <float>\n");
+		printf("\t\tSet the edge factor; default is 1\n");
 		printf("\nExamples:\n");
-		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5\n\n");
+		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5 -factor 1\n\n");
 		return 0;
 	}
 	if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(network_file, argv[i + 1]);
@@ -751,7 +754,8 @@ int main(int argc, char **argv) {
 	if ((i = ArgPos((char *)"-sense", argc, argv)) > 0) num_sense = atoi(argv[i + 1]);
 	if ((i = ArgPos((char *)"-gap", argc, argv)) > 0) gap = atof(argv[i + 1]);
 	if ((i = ArgPos((char *)"-ratio", argc, argv)) > 0) ratio = atof(argv[i + 1]);
-    total_samples *= 1000000;
+	if ((i = ArgPos((char *)"-factor", argc, argv)) > 0) factor = atof(argv[i + 1]);
+	total_samples *= 1000000;
 	rho = init_rho;
 	vertex = (struct ClassVertex *)calloc(max_num_vertices, sizeof(struct ClassVertex));
 	TrainLINE();
