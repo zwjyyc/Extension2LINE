@@ -18,7 +18,7 @@ typedef float real;
 
 real* sigmoid_table;
 real sample_ratio = 0.01;
-int total_dim;
+int total_dim, cutoff = 0;
 
 map<string, vector<real> > wordAEmb;
 map<string, vector<real> > wordBEmb;
@@ -269,11 +269,19 @@ real LinkPredictionByMultiSense(string u, string v){
 	int num_sense = wordAEmb[u].size() / (2 + dim);
 	int num_sense_2 = wordAEmb[v].size() / (2 + dim);
 	int num_token = 0;
+    int num_sense_token = 0;
 
-	for (int i = 0; i < num_sense; i++){
-		for (int j = 0; j < num_sense_2; j++){
-			//int num_sense_token = wordBEmb[u][s * (dim + 2) + 1];
-			int num_sense_token = 1;
+	for (int i = 0; i < num_sense ; i++){
+		num_sense_token = wordAEmb[u][i * (dim + 2) + 1];
+        if(num_sense_token < cutoff)
+            continue;
+
+        for (int j = 0; j < num_sense_2; j++){
+		    num_sense_token = wordAEmb[v][j * (dim + 2) + 1];
+            if(num_sense_token < cutoff)
+                continue;
+
+			num_sense_token = 1;
 			num_token += num_sense_token;
 
 			real sum, sum1, sum2;
@@ -288,7 +296,7 @@ real LinkPredictionByMultiSense(string u, string v){
 		}
 	}
 
-	x /= num_token;
+	x /= (num_token + 1);
 	return x;
 }
 
@@ -313,11 +321,12 @@ int main(int argc, char** argv){
     vector<string> trainSet; vector<string> testSet;
     GetSet(argv[4], argv[5], trainSet, testSet);
     cout << "\nGet set done!\n";
-
+    
     ofstream foutTestSet, foutMisSet;
     foutTestSet.open(argv[6]); foutMisSet.open(argv[7]);
 
     total_dim = atoi(argv[8]);
+    cutoff = atoi(argv[9]);    
 
     int ccnt = 0;
     int n_p = 0;
@@ -367,12 +376,13 @@ int main(int argc, char** argv){
             n_pp++;
 
         auc = (0.5*n_pp + 1.0*n_p) / ccnt;
-        printf("Had processed : ccnt %d, n_p %d, n_pp %d, auc %lf%%%c", ccnt, n_p, n_pp, auc, 13);
+        printf("Had processed : ccnt %d, n_p %d, n_pp %d, auc %lf%%%c", ccnt, n_p, n_pp, auc * 100, 13);
         fflush(stdout);
     
     }
 
     cout << "\nDone " << endl;
+    return 0;
     while(true){}
     for(int i = 0; i < nodeLis.size(); i++){
 
