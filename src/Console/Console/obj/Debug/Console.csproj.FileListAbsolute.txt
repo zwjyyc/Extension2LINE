@@ -1,0 +1,12 @@
+H:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.exe.config
+H:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.exe
+H:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.pdb
+H:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.csprojResolveAssemblyReference.cache
+H:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.exe
+H:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.pdb
+F:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.exe.config
+F:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.exe
+F:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.pdb
+F:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.exe
+F:\AAAI2017\NetEmb\Data\Console\Console\bin\Debug\Console.pdb
+F:\AAAI2017\NetEmb\Data\Console\Console\obj\Debug\Console.csprojResolveAssemblyReference.cache
