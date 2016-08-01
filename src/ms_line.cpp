@@ -44,7 +44,7 @@ int num_sense = -1, max_num_sense = 10;
 int *vertex_hash_table, *neg_table;
 int max_num_vertices = 1000, num_vertices = 0;
 long long total_samples = 1, current_sample_count = 0, num_edges = 0;
-real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5, factor = 1;
+real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5;
 real *emb_context, *sigmoid_table;
 real **multi_sense_emb, **multi_cluster_emb;
 
@@ -146,7 +146,7 @@ void ReadData()
 	for (int k = 0; k != num_edges; k++)
 	{
 		fscanf(fin, "%s %s %lf", name_v1, name_v2, &weight);
-		weight = pow(weight, factor);
+
 		if (k % 10000 == 0)
 		{
 			printf("Reading edges: %.3lf%%%c", k / (double)(num_edges + 1) * 100, 13);
@@ -164,6 +164,64 @@ void ReadData()
 		edge_target_id[k] = vid;
 
 		edge_weight[k] = weight;
+	}
+	fclose(fin);
+	printf("Number of vertices: %d          \n", num_vertices);
+}
+
+/* Read network from the training file */
+void ReadData2()
+{
+	FILE *fin;
+	char name_v1[MAX_STRING], name_v2[MAX_STRING], ,name_v3[MAX_STRING], str[2 * MAX_STRING + 10000];
+	int vid;
+	double weight;
+
+	fin = fopen(triple_file, "rb");
+	if (fin == NULL)
+	{
+		printf("ERROR: triple file not found!\n");
+		exit(1);
+	}
+	num_triples = 0;
+	while (fgets(str, sizeof(str), fin)) num_triples++;
+	fclose(fin);
+	printf("Number of triples: %lld          \n", num_triples);
+
+	triple_source_id = (int *)malloc(num_triples*sizeof(int));
+	triple_target_id = (int *)malloc(num_triples*sizeof(int));
+	triple_destination_id = (int *)malloc(num_triples*sizeof(int));
+	triple_weight = (double *)malloc(num_triples*sizeof(double));
+	if (triple_source_id == NULL || triple_target_id == NULL || triple_destination_id == NULL || triple_weight == NULL)
+	{
+		printf("Error: memory allocation failed!\n");
+		exit(1);
+	}
+
+	fin = fopen(triple_file, "rb");
+	for (int k = 0; k != num_triples; k++)
+	{
+		fscanf(fin, "%s %s %s %lf", name_v1, name_v2, name_v3, &weight);
+
+		if (k % 10000 == 0)
+		{
+			printf("Reading triples: %.3lf%%%c", k / (double)(num_edges + 1) * 100, 13);
+			fflush(stdout);
+		}
+
+		vid = SearchHashTable(name_v1);
+		if (vid == -1) vid = AddVertex(name_v1);
+		triple_source_id[k] = vid;
+
+		vid = SearchHashTable(name_v2);
+		if (vid == -1) vid = AddVertex(name_v2);
+		triple_target_id[k] = vid;
+		
+		vid = SearchHashTable(name_v3);
+		if (vid == -1) vid = AddVertex(name_v3);
+		triple_destination_id[k] = vid;
+
+		triple_weight[k] = weight;
 	}
 	fclose(fin);
 	printf("Number of vertices: %d          \n", num_vertices);
@@ -226,6 +284,68 @@ void InitAliasTable()
 }
 
 long long SampleAnEdge(double rand_value1, double rand_value2)
+{
+	long long k = (long long)num_edges * rand_value1;
+	return rand_value2 < prob[k] ? k : alias[k];
+}
+
+/* The alias sampling algorithm, which is used to sample an triple in O(1) time. */
+void InitAliasTable2()
+{
+	alias = (long long *)malloc(num_triples*sizeof(long long));
+	prob = (double *)malloc(num_triples*sizeof(double));
+	if (alias == NULL || prob == NULL)
+	{
+		printf("Error: memory allocation failed!\n");
+		exit(1);
+	}
+
+	double *norm_prob = (double*)malloc(num_triples*sizeof(double));
+	long long *large_block = (long long*)malloc(num_triples*sizeof(long long));
+	long long *small_block = (long long*)malloc(num_triples*sizeof(long long));
+	if (norm_prob == NULL || large_block == NULL || small_block == NULL)
+	{
+		printf("Error: memory allocation failed!\n");
+		exit(1);
+	}
+
+	double sum = 0;
+	long long cur_small_block, cur_large_block;
+	long long num_small_block = 0, num_large_block = 0;
+
+	for (long long k = 0; k != num_triples; k++) sum += triple_weight[k];
+	for (long long k = 0; k != num_triples; k++) norm_prob[k] = triple_weight[k] * num_triples / sum;
+
+	for (long long k = num_triples - 1; k >= 0; k--)
+	{
+		if (norm_prob[k]<1)
+			small_block[num_small_block++] = k;
+		else
+			large_block[num_large_block++] = k;
+	}
+
+	while (num_small_block && num_large_block)
+	{
+		cur_small_block = small_block[--num_small_block];
+		cur_large_block = large_block[--num_large_block];
+		prob[cur_small_block] = norm_prob[cur_small_block];
+		alias[cur_small_block] = cur_large_block;
+		norm_prob[cur_large_block] = norm_prob[cur_large_block] + norm_prob[cur_small_block] - 1;
+		if (norm_prob[cur_large_block] < 1)
+			small_block[num_small_block++] = cur_large_block;
+		else
+			large_block[num_large_block++] = cur_large_block;
+	}
+
+	while (num_large_block) prob[large_block[--num_large_block]] = 1;
+	while (num_small_block) prob[small_block[--num_small_block]] = 1;
+
+	free(norm_prob);
+	free(small_block);
+	free(large_block);
+}
+
+long long SampleAnTriple(double rand_value1, double rand_value2)
 {
 	long long k = (long long)num_edges * rand_value1;
 	return rand_value2 < prob[k] ? k : alias[k];
@@ -477,7 +597,7 @@ int AssignSense2Node(int u, int v)
 
 void *TrainLINEThread(void *id)
 {
-	long long u, v, lu, lv, target, label;
+	long long u, v, v2, lu, lv, target, label;
 	long long count = 0, last_count = 0, curedge;
 	unsigned long long seed = (long long)id;
     int k = 0;
@@ -498,39 +618,72 @@ void *TrainLINEThread(void *id)
 			if (rho < init_rho * 0.0001) rho = init_rho * 0.0001;
 		}
 
-		curedge = SampleAnEdge(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
-		u = edge_source_id[curedge];
-		v = edge_target_id[curedge];
+		int triple_or_edge = rand() % 2;
+		if (triple_or_edge == 0){
+			curedge = SampleAnEdge(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
+			u = edge_source_id[curedge];
+			v = edge_target_id[curedge];
 
-        	// 
-        	k = 0;
-		
-		if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
-		//printf("word %lld; sense %d\n", u, k);
-        	//UpdateContextCluster(u, k);
-        
-		lu = k * dim; // 
-		for (int c = 0; c != dim; c++) vec_error[c] = 0;
+	        	// 
+	        	k = 0;
 
-		// NEGATIVE SAMPLING
-		for (int d = 0; d != num_negative + 1; d++)
-		{
-			if (d == 0)
+			if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
+			//printf("word %lld; sense %d\n", u, k);
+	        	//UpdateContextCluster(u, k);
+
+			lu = k * dim; // 
+			for (int c = 0; c != dim; c++) vec_error[c] = 0;
+
+			// NEGATIVE SAMPLING
+			for (int d = 0; d != num_negative + 1; d++)
 			{
-				target = v;
-				label = 1;
-			}
-			else
-			{
-				target = neg_table[Rand(seed)];
-				label = 0;
-			}
-			lv = target * dim;
+				if (d == 0)
+				{
+					target = v;
+					label = 1;
+				}
+				else
+				{
+					target = neg_table[Rand(seed)];
+					label = 0;
+				}
+				lv = target * dim;
 
-			if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label);
+				if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label);
+			}
+			for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
+		}else{
+			curedge = SampleAnTriple(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
+			u = triple_source_id[curedge];
+			v = triple_target_id[curedge];
+			v2 = triple_destination_id[curedge];
+
+        		// 
+        		k = 0;
+
+			if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
+			//printf("word %lld; sense %d\n", u, k);
+	        	//UpdateContextCluster(u, k);
+
+			lu = k * dim; // 
+			for (int c = 0; c != dim; c++) vec_error[c] = 0;
+
+			// NEGATIVE SAMPLING
+			for (int d = 0; d != num_negative + 1; d++){
+				if (d == 0){
+					target = v;
+					label = 1;
+				}
+				else{
+					target = neg_table[Rand(seed)];
+					label = 0;
+				}
+				lv = target * dim;
+
+				if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label);
+			}
+			for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
 		}
-		for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
-
 		count++;
 	}
 	free(vec_error);
@@ -664,7 +817,6 @@ void TrainLINE() {
 	printf("Sense: %d\n", num_sense);
 	printf("Gapval: %lf\n", gap);
 	printf("Pre-training ratio %lf\n", ratio);
-	printf("Factor %lf\n", factor);
 	printf("Samples: %lldM\n", total_samples / 1000000);
 	printf("Negative: %d\n", num_negative);
 	printf("Dimension: %d\n", dim);
@@ -736,10 +888,8 @@ int main(int argc, char **argv) {
         	printf("\t\tSet the gab value; default is -0.5\n");
 		printf("\t-ratio <float>\n");
 		printf("\t\tSet the pre-training ratio; default is 0.5\n");
-		printf("\t-factor <float>\n");
-		printf("\t\tSet the edge factor; default is 1\n");
 		printf("\nExamples:\n");
-		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5 -factor 1\n\n");
+		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5\n\n");
 		return 0;
 	}
 	if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(network_file, argv[i + 1]);
@@ -754,8 +904,7 @@ int main(int argc, char **argv) {
 	if ((i = ArgPos((char *)"-sense", argc, argv)) > 0) num_sense = atoi(argv[i + 1]);
 	if ((i = ArgPos((char *)"-gap", argc, argv)) > 0) gap = atof(argv[i + 1]);
 	if ((i = ArgPos((char *)"-ratio", argc, argv)) > 0) ratio = atof(argv[i + 1]);
-	if ((i = ArgPos((char *)"-factor", argc, argv)) > 0) factor = atof(argv[i + 1]);
-	total_samples *= 1000000;
+    total_samples *= 1000000;
 	rho = init_rho;
 	vertex = (struct ClassVertex *)calloc(max_num_vertices, sizeof(struct ClassVertex));
 	TrainLINE();
