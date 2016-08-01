@@ -44,7 +44,7 @@ int num_sense = -1, max_num_sense = 10;
 int *vertex_hash_table, *neg_table;
 int max_num_vertices = 1000, num_vertices = 0;
 long long total_samples = 1, current_sample_count = 0, num_edges = 0;
-real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5, factor = 1;
+real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5, factor = 1, threshold = 10, sample_factor = 0.5, gamma_ = 0.25, cutoff = 20;
 real *emb_context, *sigmoid_table;
 real **multi_sense_emb, **multi_cluster_emb;
 
@@ -250,13 +250,14 @@ void InitVector()
 			multi_cluster_emb[a] = (real *)malloc((1 + (dim + 1) * max_num_sense) * sizeof(real));
 			multi_cluster_emb[a][0] = 1;
 			multi_cluster_emb[a][1] = 0;
-			for (b = 0; b < dim; b++){
-				multi_sense_emb[a][b] = (rand() / (real)RAND_MAX - 0.5) / dim;
-			}
+
             
             for (k = 0; k < max_num_sense; k++){
                 for(b = 0; b < dim; b++){
                     multi_cluster_emb[a][2 + (dim + 1)*k + b] = (rand() / (real)RAND_MAX - 0.5) / dim;
+					//for (b = 0; b < dim; b++){
+					multi_sense_emb[a][b + dim * k] = (rand() / (real)RAND_MAX - 0.5) / dim;
+					//}
                 }
 
                 multi_cluster_emb[a][1 + (dim + 1)*k] = 0;
@@ -337,7 +338,7 @@ void Update(real *vec_u, real *vec_v, real *vec_error, int label)
 	for (int c = 0; c != dim; c++) x += vec_u[c] * vec_v[c];
 	g = (label - FastSigmoid(x)) * rho;
 	for (int c = 0; c != dim; c++) vec_error[c] += g * vec_v[c];
-	for (int c = 0; c != dim; c++) vec_v[c] += g * vec_u[c];
+    for (int c = 0; c != dim; c++) vec_v[c] += g * vec_u[c];
 }
 
 // only one node for context June 25, 2016
@@ -358,13 +359,14 @@ void CreatNewClusterV2(int u)
 	int num_word_sense = (int)multi_cluster_emb[u][0];
 	int lu = 1 + num_word_sense * (dim + 1), i;
 
-	num_word_sense++;
-	multi_cluster_emb[u][lu] = 0;
-	
+    num_word_sense++;
+    multi_cluster_emb[u][lu] = 1;
+
     for (i = (num_word_sense - 1) * dim; i < num_word_sense * dim; i++){
-		multi_sense_emb[u][i] = (rand() / (real)RAND_MAX - 0.5) / dim;
-	}
-	
+        multi_sense_emb[u][i] = (rand() / (real)RAND_MAX - 0.5) / dim;
+        //multi_sense_emb[u][i] = multi_sense_emb[u][i - (num_word_sense - 1) * dim];
+    }
+
     multi_cluster_emb[u][0] += 1;
 }
 
@@ -404,52 +406,92 @@ void CreatNewCluster(int u)
 	free(tmpPtr1); free(tmpPtr2);
 }
 
-int FindNearestCluster(int u, real* vec_context){
+int FindNearestCluster(int u, int v, real* vec_context){
     int num_word_sense = (int)multi_cluster_emb[u][0], lu, i, j;
     real *sims = (real *) malloc(num_word_sense * sizeof(real));
+	real *tmp = (real *)malloc((num_word_sense + 1) * sizeof(real));
     real max_sim = -100000.0;
     int k = 0;
+	int min_cnt = 10000;
 
     for(i = 0; i < num_word_sense; i++){
         lu = i * (dim + 1) + 2;
         real sum, sum1, sum2;
         sum = sum1 = sum2 = 0;
-        
+
         for(j = 0; j < dim; j++){
             sum += vec_context[j] * multi_cluster_emb[u][lu + j];
             sum1 += pow(vec_context[j], 2);
             sum2 += pow(multi_cluster_emb[u][lu + j], 2);
         }
 
-        //cout << multi_cluster_emb[u][lu] << endl;
-        //cout << multi_cluster_emb[u][lu + 1] << endl;
-        //cin.get();
 
-        sum1 = sqrt(sum1); sum2 = sqrt(sum2);
-        sims[i] = sum / (sum1 * sum2 + 1e-8);
-        //cout << sum1 << endl; cout << sum2 << endl;
-        //cout << sims[i] << endl;
-        //cin.get();
+		// assign cluster by dot product
+		sims[i] = sum ;
         
+		// assign cluster by cosine similarity
+		//sum1 = sqrt(sum1); sum2 = sqrt(sum2);
+        //sims[i] = sum / (sum1 * sum2 + 1e-8);
+		
+
         if(sims[i] > max_sim){
             k = i;
             max_sim = sims[i]; 
         }
+
+		if (min_cnt > multi_cluster_emb[u][lu - 1]){
+			min_cnt = multi_cluster_emb[u][lu - 1];
+		}
     }
-    
-    if(num_sense == -1 && max_sim < gap){
-        //cout << max_sim << endl;
-        //cout << gap << endl;
-        //cin.get();
-		k = num_word_sense;
-		if (k >= max_num_sense - 1)
-			k = 0;
-        else
-			CreatNewClusterV2(u);
-    }
+
+	if (min_cnt > cutoff && num_sense == -1 && pow(vertex[v].degree, 1 / factor) >= threshold){
+		for (i = 0; i < num_word_sense; i++){
+			lu = i * (dim + 1) + 2;
+			tmp[i] = FastSigmoid(sims[i]) * multi_cluster_emb[u][lu - 1] / (min_cnt * 2);
+		}
+
+		tmp[i] = FastSigmoid(gamma_);
+
+		for (i = 1; i < num_word_sense + 1; i++){
+			tmp[i] += tmp[i - 1];
+		}
+
+		real rand_tmp = rand() / (real)RAND_MAX * tmp[num_word_sense];
+
+		for (i = 1; i <= num_word_sense + 1; i++){
+			if (rand_tmp <= tmp[i - 1]){
+				k = i - 1;
+				break;
+			}
+		}
+
+		if (k == num_word_sense){
+			if (k >= max_num_sense - 1)
+				k = 0;
+			else
+				CreatNewClusterV2(u);
+		}
+	}
+
+	/*
+	if (num_sense == -1 && max_sim < gap && pow(vertex[v].degree, 1 / factor) >= threshold){
+		// make new vectors based on sampling
+        if(rand() / (real)RAND_MAX > pow(threshold / pow(vertex[v].degree, 1 / factor) , sample_factor))
+        {
+            k = num_word_sense;
+            if (k >= max_num_sense - 1)
+                k = 0;
+            else
+                CreatNewClusterV2(u);
+        }
+    }*/
     free(sims);
     return k;
-    // return AssignSenseBySample(sims);
+}
+
+void UpdateCnt(int u, int k){
+    int lu = k * (dim + 1) + 1;
+    multi_cluster_emb[u][lu] += 1;
 }
 
 void UpdateContextCluster(int u, int k, real *vec_context)
@@ -459,8 +501,6 @@ void UpdateContextCluster(int u, int k, real *vec_context)
 	for (i = 0; i < dim; i++){
 		multi_cluster_emb[u][lu + 1 + i] = multi_cluster_emb[u][lu + 1 + i] * num / (num + 1) + vec_context[i] / (num + 1);
 	}
-
-	multi_cluster_emb[u][lu] += 1;
 }
 
 int AssignSense2Node(int u, int v)
@@ -468,7 +508,7 @@ int AssignSense2Node(int u, int v)
     real *vec_context = (real *)calloc(dim, sizeof(real));
     int k;
     AssignContextVec(v, vec_context);
-    k = FindNearestCluster(u, vec_context);
+    k = FindNearestCluster(u, v, vec_context);
     UpdateContextCluster(u, k, vec_context);
 
 	free(vec_context);
@@ -502,14 +542,16 @@ void *TrainLINEThread(void *id)
 		u = edge_source_id[curedge];
 		v = edge_target_id[curedge];
 
-        	// 
-        	k = 0;
+        k = 0;
 		
-		if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
-		//printf("word %lld; sense %d\n", u, k);
-        	//UpdateContextCluster(u, k);
-        
-		lu = k * dim; // 
+		if (current_sample_count > ratio * total_samples){
+             k = AssignSense2Node(u, v);
+        }
+		
+        UpdateCnt(u, k);
+
+		lu = k * dim; 
+
 		for (int c = 0; c != dim; c++) vec_error[c] = 0;
 
 		// NEGATIVE SAMPLING
@@ -580,48 +622,9 @@ void Output()
     fclose(fo);
 
     char embedding_file3[100];
-    sprintf(embedding_file3, "%s.all.emb", embedding_file);
+    sprintf(embedding_file3, "%s.multi.context.emb", embedding_file);
 
     fo = fopen(embedding_file3, "wb");
-
-    fprintf(fo, "%d %d\n", num_vertices, dim);
-    for(int a = 0; a < num_vertices; a++){
-        int num = multi_cluster_emb[a][0];
-        real vec[dim];
-
-        int token_num = 0;
-
-        for (int b = 0; b < dim; b++)
-            vec[b] = 0;
-        
-        for (int k = 0; k < num; k++){
-            int num_sense = (int) multi_cluster_emb[a][k * (1 + dim) + 1];
-            //num_sense = 1;
-            token_num += num_sense;
-            
-            for (int b = 0; b < dim; b++){
-                vec[b] += multi_sense_emb[a][k * dim + b] * num_sense;
-            }
-        }
-
-        if(token_num != 0){
-            for (int b = 0; b < dim; b++){
-                vec[b] = vec[b] / (1.0 * token_num);
-            }
-        }
-        
-        fprintf(fo, "%s ", vertex[a].name);
-        if (is_binary) for(int b = 0; b < dim; b++) fwrite(&vec[b], sizeof(real), 1, fo);
-        else for(int b = 0; b < dim; b++) fprintf(fo, "%lf ", vec[b]);
-        fprintf(fo, "\n");
-    }
-
-    fclose(fo);
-
-    char embedding_file4[100];
-    sprintf(embedding_file4, "%s.multi.context.emb", embedding_file);
-
-    fo = fopen(embedding_file4, "wb");
 
     fprintf(fo, "%d %d\n", num_vertices, dim);
     for(int a = 0; a < num_vertices; a++){
@@ -664,7 +667,9 @@ void TrainLINE() {
 	printf("Sense: %d\n", num_sense);
 	printf("Gapval: %lf\n", gap);
 	printf("Pre-training ratio %lf\n", ratio);
-	printf("Factor %lf\n", factor);
+    printf("Threshold: %lf\n", threshold);
+	printf("Factor: %lf\n", factor);
+    printf("Sample factor: %lf\n", sample_factor);
 	printf("Samples: %lldM\n", total_samples / 1000000);
 	printf("Negative: %d\n", num_negative);
 	printf("Dimension: %d\n", dim);
@@ -730,16 +735,18 @@ int main(int argc, char **argv) {
 		printf("\t\tUse <int> threads (default 1)\n");
 		printf("\t-rho <float>\n");
 		printf("\t\tSet the starting learning rate; default is 0.025\n");
-        	printf("\t-sense <int>\n");
+        printf("\t-sense <int>\n");
 		printf("\t\tSet the fixed number of sense; default is -1 which means non-parameteric estimation\n");
-        	printf("\t-gap <float>\n");
-        	printf("\t\tSet the gab value; default is -0.5\n");
+        printf("\t-gap <float>\n");
+        printf("\t\tSet the gab value; default is -0.5\n");
 		printf("\t-ratio <float>\n");
 		printf("\t\tSet the pre-training ratio; default is 0.5\n");
 		printf("\t-factor <float>\n");
-		printf("\t\tSet the edge factor; default is 1\n");
+		printf("\t\tSet the threshold to reduce noise senses; default is 10\n");
+        printf("\t-threshold <float>\n");
+        printf("\t\tSet the edge factor; default is 1\n");
 		printf("\nExamples:\n");
-		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5 -factor 1\n\n");
+		printf("./ms-line -train net.txt -output vec.txt -binary 1 -size 200 -order 2 -negative 5 -samples 100 -rho 0.025 -threads 20 -sense 3 -gap -0.5 -ratio 0.5 -factor 1 -threshold 10 -sample_factor 0.5\n\n");
 		return 0;
 	}
 	if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(network_file, argv[i + 1]);
@@ -755,6 +762,8 @@ int main(int argc, char **argv) {
 	if ((i = ArgPos((char *)"-gap", argc, argv)) > 0) gap = atof(argv[i + 1]);
 	if ((i = ArgPos((char *)"-ratio", argc, argv)) > 0) ratio = atof(argv[i + 1]);
 	if ((i = ArgPos((char *)"-factor", argc, argv)) > 0) factor = atof(argv[i + 1]);
+    if ((i = ArgPos((char *)"-threshold", argc, argv)) > 0) threshold = atof(argv[i + 1]);
+    if ((i = ArgPos((char *)"-sample_factor", argc, argv)) > 0) sample_factor = atof(argv[i + 1]);
 	total_samples *= 1000000;
 	rho = init_rho;
 	vertex = (struct ClassVertex *)calloc(max_num_vertices, sizeof(struct ClassVertex));

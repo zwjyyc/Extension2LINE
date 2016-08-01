@@ -1,3 +1,5 @@
+
+
 #echo "shuf & construct dataset..."
 #awk 'NR%2' ../data/dblp.authors.net > ../data/dblp.authors.net.v2
 
@@ -26,7 +28,7 @@ echo "embedding learning..."
 
 g++ -lm -pthread -Ofast -march=native -Wall -funroll-loops -ffast-math -Wno-unused-result ms_line.cpp -o ms_line -lgsl -lm -lgslcblas
 
-./ms_line -train ../data/dblp.authors.net.shuf.train -output vec_2nd_wo_norm.txt -binary 0 -size 50 -order 2 -negative 5 -samples 300 -threads 15 -sense -1 -gap -0.2 -ratio 0.5 -factor 0.75
+./ms_line -train ../data/dblp.authors.net.shuf.train -output vec_2nd_wo_norm.txt -binary 0 -size 50 -order 2 -negative 5 -samples 300 -threads 15 -sense -1 -gap -0.2 -ratio 0.5 -factor 0.75 -threshold 5 -sample_factor 0.5
 
 echo "predict auc"
 g++ predict.cpp -o predict

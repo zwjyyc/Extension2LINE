@@ -271,6 +271,10 @@ real LinkPredictionByMultiSense(string u, string v){
 	int num_token = 0;
     int num_sense_token = 0;
 
+	real min, max;
+	min = 10000;
+	max = -10000;
+
 	for (int i = 0; i < num_sense ; i++){
 		num_sense_token = wordAEmb[u][i * (dim + 2) + 1];
         if(num_sense_token < cutoff)
@@ -292,11 +296,24 @@ real LinkPredictionByMultiSense(string u, string v){
 				sum1 += pow(wordAEmb[u][i * (dim + 2) + 2 + k], 2.0);
 				sum2 += pow(wordAEmb[v][j * (dim + 2) + 2 + k], 2.0);
 			}
-			x += sum * num_sense_token / (sqrt(sum1) * sqrt(sum2) + 1e-8);
+
+			real tmp = sum * num_sense_token / (sqrt(sum1) * sqrt(sum2));
+			x += tmp;
+
+			if (tmp < min){
+				min = tmp;
+			}
+
+			if (tmp > max){
+				max = tmp;
+			}
 		}
 	}
-
-	x /= (num_token + 1);
+    
+    if(num_token == 0)
+        return 0;
+	x /= num_token;
+	//return max;
 	return x;
 }
 
