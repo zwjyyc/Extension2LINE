@@ -296,7 +296,10 @@ real LinkPredictionByMultiSense(string u, string v){
 		}
 	}
 
-	x /= (num_token + 1);
+    if (num_token == 0)
+	    return 0;
+    else
+        x /= num_token;
 	return x;
 }
 

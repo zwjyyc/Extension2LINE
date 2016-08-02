@@ -43,14 +43,13 @@ int is_binary = 0, num_threads = 1, order = 2, dim = 100, num_negative = 5;
 int num_sense = -1, max_num_sense = 10;
 int *vertex_hash_table, *neg_table;
 int max_num_vertices = 1000, num_vertices = 0;
-long long total_samples = 1, current_sample_count = 0, num_edges = 0;
+long long total_samples = 1, current_sample_count = 0, num_edges = 0, num_triples = 0;
 real init_rho = 0.025, rho, gap = -0.5, ratio = 0.5;
 real *emb_context, *sigmoid_table;
 real **multi_sense_emb, **multi_cluster_emb;
 
-int *edge_source_id, *edge_target_id;
-double *edge_weight;
-
+int *edge_source_id, *edge_target_id, *triple_source_id, *triple_target_id, *triple_target_id_v2;
+double *edge_weight, *triple_weight;
 // Parameters for edge sampling
 long long *alias;
 double *prob;
@@ -173,14 +172,14 @@ void ReadData()
 void ReadData2()
 {
 	FILE *fin;
-	char name_v1[MAX_STRING], name_v2[MAX_STRING], ,name_v3[MAX_STRING], str[2 * MAX_STRING + 10000];
+	char name_v1[MAX_STRING], name_v2[MAX_STRING] ,name_v3[MAX_STRING], str[2 * MAX_STRING + 10000];
 	int vid;
 	double weight;
 
-	fin = fopen(triple_file, "rb");
+	fin = fopen(network_file, "rb");
 	if (fin == NULL)
 	{
-		printf("ERROR: triple file not found!\n");
+		printf("ERROR: network file not found!\n");
 		exit(1);
 	}
 	num_triples = 0;
@@ -190,36 +189,39 @@ void ReadData2()
 
 	triple_source_id = (int *)malloc(num_triples*sizeof(int));
 	triple_target_id = (int *)malloc(num_triples*sizeof(int));
-	triple_destination_id = (int *)malloc(num_triples*sizeof(int));
+	triple_target_id_v2 = (int *)malloc(num_triples*sizeof(int));
 	triple_weight = (double *)malloc(num_triples*sizeof(double));
-	if (triple_source_id == NULL || triple_target_id == NULL || triple_destination_id == NULL || triple_weight == NULL)
+	if (triple_source_id == NULL || triple_target_id == NULL || triple_target_id_v2 == NULL || triple_weight == NULL)
 	{
 		printf("Error: memory allocation failed!\n");
 		exit(1);
 	}
 
-	fin = fopen(triple_file, "rb");
+	fin = fopen(network_file, "rb");
 	for (int k = 0; k != num_triples; k++)
 	{
 		fscanf(fin, "%s %s %s %lf", name_v1, name_v2, name_v3, &weight);
 
 		if (k % 10000 == 0)
 		{
-			printf("Reading triples: %.3lf%%%c", k / (double)(num_edges + 1) * 100, 13);
+			printf("Reading triples: %.3lf%%%c", k / (double)(num_triples + 1) * 100, 13);
 			fflush(stdout);
 		}
 
 		vid = SearchHashTable(name_v1);
 		if (vid == -1) vid = AddVertex(name_v1);
-		triple_source_id[k] = vid;
+        vertex[vid].degree += weight;
+        triple_source_id[k] = vid;
 
 		vid = SearchHashTable(name_v2);
 		if (vid == -1) vid = AddVertex(name_v2);
-		triple_target_id[k] = vid;
-		
+        vertex[vid].degree += weight;
+        triple_target_id[k] = vid;
+
 		vid = SearchHashTable(name_v3);
-		if (vid == -1) vid = AddVertex(name_v3);
-		triple_destination_id[k] = vid;
+        if (vid == -1) vid = AddVertex(name_v3);
+        vertex[vid].degree += weight;
+        triple_target_id_v2[k] = vid;
 
 		triple_weight[k] = weight;
 	}
@@ -347,7 +349,7 @@ void InitAliasTable2()
 
 long long SampleAnTriple(double rand_value1, double rand_value2)
 {
-	long long k = (long long)num_edges * rand_value1;
+	long long k = (long long)num_triples * rand_value1;
 	return rand_value2 < prob[k] ? k : alias[k];
 }
 
@@ -370,13 +372,14 @@ void InitVector()
 			multi_cluster_emb[a] = (real *)malloc((1 + (dim + 1) * max_num_sense) * sizeof(real));
 			multi_cluster_emb[a][0] = 1;
 			multi_cluster_emb[a][1] = 0;
-			for (b = 0; b < dim; b++){
+			/*for (b = 0; b < dim; b++){
 				multi_sense_emb[a][b] = (rand() / (real)RAND_MAX - 0.5) / dim;
-			}
+			}*/
             
             for (k = 0; k < max_num_sense; k++){
                 for(b = 0; b < dim; b++){
                     multi_cluster_emb[a][2 + (dim + 1)*k + b] = (rand() / (real)RAND_MAX - 0.5) / dim;
+                    multi_sense_emb[a][b + dim * k] = (rand() / (real)RAND_MAX - 0.5) / dim;
                 }
 
                 multi_cluster_emb[a][1 + (dim + 1)*k] = 0;
@@ -451,26 +454,39 @@ int Rand(unsigned long long &seed)
 }
 
 /* Update embeddings */
-void Update(real *vec_u, real *vec_v, real *vec_error, int label)
+void Update(real *vec_u, real *vec_v, real *vec_error, int label, real *vec_v2 = NULL)
 {
 	real x = 0, g;
-	for (int c = 0; c != dim; c++) x += vec_u[c] * vec_v[c];
+    if (vec_v2 != NULL)
+	    for (int c = 0; c != dim; c++) x += vec_u[c] * (vec_v[c] + vec_v2[c]) / 2;
+    else
+        for (int c = 0; c != dim; c++) x += vec_u[c] * vec_v[c];
+
 	g = (label - FastSigmoid(x)) * rho;
-	for (int c = 0; c != dim; c++) vec_error[c] += g * vec_v[c];
-	for (int c = 0; c != dim; c++) vec_v[c] += g * vec_u[c];
+
+    if (vec_v2 != NULL){
+	    for (int c = 0; c != dim; c++) vec_error[c] += g * (vec_v[c] + vec_v2[c]) / 2;
+	    for (int c = 0; c != dim; c++) { vec_v[c] += g * vec_u[c] / 2; vec_v2[c] += g * vec_u[c] / 2; }
+    }
+    else{
+        for (int c = 0; c != dim; c++) vec_error[c] += g * vec_v[c];
+        for (int c = 0; c != dim; c++) vec_v[c] += g * vec_u[c];
+    }
 }
 
 // only one node for context June 25, 2016
-void AssignContextVec(int v, real *v_cxt)
+void AssignContextVec(int v, real *v_cxt, int v2 = -1)
 {
     long long lv = v * dim;
     for(int c = 0; c != dim; c++) v_cxt[c] = emb_context[c + lv];
-}
 
-// useful ?
-int AssignSenseBySample(real *sims)
-{
-    return 0;
+    if(v2 != -1){
+        lv = v2 * dim;
+        for(int c = 0; c != dim; c++){
+            v_cxt[c] += emb_context[c + lv];
+            v_cxt[c] /= 2;
+        }
+    }
 }
 
 void CreatNewClusterV2(int u)
@@ -572,6 +588,11 @@ int FindNearestCluster(int u, real* vec_context){
     // return AssignSenseBySample(sims);
 }
 
+void UpdateCnt(int u, int k){
+    int lu = k * (dim + 1) + 1;
+    multi_cluster_emb[u][lu] += 1;
+}
+
 void UpdateContextCluster(int u, int k, real *vec_context)
 {
 	int lu = k * (dim + 1) + 1;
@@ -580,25 +601,31 @@ void UpdateContextCluster(int u, int k, real *vec_context)
 		multi_cluster_emb[u][lu + 1 + i] = multi_cluster_emb[u][lu + 1 + i] * num / (num + 1) + vec_context[i] / (num + 1);
 	}
 
-	multi_cluster_emb[u][lu] += 1;
 }
 
-int AssignSense2Node(int u, int v)
+int AssignSense2Node(int u, int v, int v2 = -1)
 {
     real *vec_context = (real *)calloc(dim, sizeof(real));
     int k;
-    AssignContextVec(v, vec_context);
+
+    if (v2 == -1){
+        AssignContextVec(v, vec_context);
+    }
+    else {
+        AssignContextVec(v, vec_context, v2);    
+    }
+
     k = FindNearestCluster(u, vec_context);
     UpdateContextCluster(u, k, vec_context);
-
+    
 	free(vec_context);
     return k;
 }
 
 void *TrainLINEThread(void *id)
 {
-	long long u, v, v2, lu, lv, target, label;
-	long long count = 0, last_count = 0, curedge;
+	long long u, v, v2, lu, lv, lv2, target, label;
+	long long count = 0, last_count = 0, curtriple;
 	unsigned long long seed = (long long)id;
     int k = 0;
 	real *vec_error = (real *)calloc(dim, sizeof(real));
@@ -608,7 +635,7 @@ void *TrainLINEThread(void *id)
 		//judge for exit
 		if (count > total_samples / num_threads + 2) break;
 
-		if (count - last_count>10000)
+		if (count - last_count > 10000)
 		{
 			current_sample_count += count - last_count;
 			last_count = count;
@@ -618,48 +645,71 @@ void *TrainLINEThread(void *id)
 			if (rho < init_rho * 0.0001) rho = init_rho * 0.0001;
 		}
 
-		int triple_or_edge = rand() % 2;
-		if (triple_or_edge == 0){
-			curedge = SampleAnEdge(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
-			u = edge_source_id[curedge];
-			v = edge_target_id[curedge];
+		//int triple_or_edge = rand() % 2;
+        //if (triple_or_edge == 0){
+        curtriple = SampleAnTriple(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
+        u = triple_source_id[curtriple];
+        v = triple_target_id[curtriple];
+        v2 = triple_target_id_v2[curtriple];
+        // 
+        k = 0;
 
-	        	// 
-	        	k = 0;
+        if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v, v2);
+        //printf("word %lld; sense %d\n", u, k);
+        //UpdateContextCluster(u, k);
+        UpdateCnt(u, k);
 
-			if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
-			//printf("word %lld; sense %d\n", u, k);
-	        	//UpdateContextCluster(u, k);
+        lu = k * dim; // 
+        for (int c = 0; c != dim; c++) vec_error[c] = 0;
 
-			lu = k * dim; // 
-			for (int c = 0; c != dim; c++) vec_error[c] = 0;
+        // NEGATIVE SAMPLING
+        for (int d = 0; d != num_negative + 1; d++)
+        {
+            // Sampling for v1
+            if (d == 0)
+            {
+                target = v;
+                label = 1;
+            }
+            else
+            {
+                target = neg_table[Rand(seed)];
+                label = 0;
+            }
+            lv = target * dim;
+            lv2 = v2 * dim;
 
-			// NEGATIVE SAMPLING
-			for (int d = 0; d != num_negative + 1; d++)
-			{
-				if (d == 0)
-				{
-					target = v;
-					label = 1;
-				}
-				else
-				{
-					target = neg_table[Rand(seed)];
-					label = 0;
-				}
-				lv = target * dim;
+            if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label, &emb_context[lv2]);
 
-				if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label);
-			}
-			for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
-		}else{
+            // Sampling for v2
+            if (d == 0){
+                target = v2;
+                label = 1;
+            }
+            else
+            {
+                target = neg_table[Rand(seed)];
+                label = 0;
+            }
+            lv = v * dim;
+            lv2 = target * dim;
+
+            if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label, &emb_context[lv2]);
+
+        }
+        for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
+
+        count++;
+    }
+        
+        /*else{
 			curedge = SampleAnTriple(gsl_rng_uniform(gsl_r), gsl_rng_uniform(gsl_r));
 			u = triple_source_id[curedge];
 			v = triple_target_id[curedge];
 			v2 = triple_destination_id[curedge];
 
         		// 
-        		k = 0;
+        	k = 0;
 
 			if (current_sample_count > ratio * total_samples) k = AssignSense2Node(u, v);
 			//printf("word %lld; sense %d\n", u, k);
@@ -670,7 +720,8 @@ void *TrainLINEThread(void *id)
 
 			// NEGATIVE SAMPLING
 			for (int d = 0; d != num_negative + 1; d++){
-				if (d == 0){
+				// Sample for v1
+                if (d == 0){
 					target = v;
 					label = 1;
 				}
@@ -679,13 +730,22 @@ void *TrainLINEThread(void *id)
 					label = 0;
 				}
 				lv = target * dim;
+                lv2 
 
 				if (order == 2) Update(&multi_sense_emb[u][lu], &emb_context[lv], vec_error, label);
+                
+                // Sample for v2
+                if (d == 0){
+                    
+                }
+                else{
+                    
+                }
 			}
 			for (int c = 0; c != dim; c++) multi_sense_emb[u][c + lu] += vec_error[c];
-		}
-		count++;
-	}
+		}*/
+		//count++;
+	//}
 	free(vec_error);
 	pthread_exit(NULL);
 }
@@ -824,8 +884,8 @@ void TrainLINE() {
 	printf("--------------------------------\n");
 
 	InitHashTable();
-	ReadData();
-	InitAliasTable();
+	ReadData2();
+	InitAliasTable2();
 	InitVector();
 	InitNegTable();
 	InitSigmoidTable();
